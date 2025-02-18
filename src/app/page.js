@@ -1,8 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import Employee from "./components/Employee";
-import { employees as initialEmployees } from "./data/employees";
+import Employee from "../components/Employee";
+import { employees as initialEmployees } from "../data/employees";
 
 export default function Page() {
   const [employees, setEmployees] = useState(initialEmployees);

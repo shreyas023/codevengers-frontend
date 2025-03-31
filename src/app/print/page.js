@@ -1,106 +1,103 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState, useEffect } from 'react';
 import Script from 'next/script';
 
-export default function PrintPage() {
+export default function Page() {
   const [printers, setPrinters] = useState([]);
   const [selectedPrinter, setSelectedPrinter] = useState('');
-  const [isJSPMLoaded, setIsJSPMLoaded] = useState(false);
+  const [useDefaultPrinter, setUseDefaultPrinter] = useState(false);
 
   useEffect(() => {
-    if (typeof window !== 'undefined' && isJSPMLoaded) {
-      JSPM.JSPrintManager.auto_reconnect = true;
-      JSPM.JSPrintManager.start();
+    const initializePrinters = async () => {
+      if (window.JSPM) {
+        JSPM.JSPrintManager.auto_reconnect = true;
+        JSPM.JSPrintManager.start();
 
-      JSPM.JSPrintManager.WS.onStatusChanged = async function () {
-        if (JSPM.JSPrintManager.websocket_status === JSPM.WSStatus.Open) {
-          const printersList = await JSPM.JSPrintManager.getPrinters();
-          setPrinters(printersList);
-          if (printersList.length > 0) setSelectedPrinter(printersList[0]);
-        }
-      };
-    }
-  }, [isJSPMLoaded]);
+        JSPM.JSPrintManager.WS.onStatusChanged = () => {
+          if (JSPM.JSPrintManager.websocket_status === JSPM.WSStatus.Open) {
+            JSPM.JSPrintManager.getPrinters().then((printersList) => {
+              setPrinters(printersList);
+              if (printersList.length > 0) {
+                setSelectedPrinter(printersList[0]);
+              }
+            });
+          }
+        };
+      }
+    };
 
-  const handlePrint = async () => {
-    if (JSPM.JSPrintManager.websocket_status !== JSPM.WSStatus.Open) {
-      alert('JSPrintManager is not running. Download from https://neodynamic.com/downloads/jspm');
+    initializePrinters();
+  }, []);
+
+  const doPrinting = async () => {
+    if (!window.JSPM || JSPM.JSPrintManager.websocket_status !== JSPM.WSStatus.Open) {
+      alert('JSPrintManager is not installed or not running!');
       return;
     }
 
     const escpos = Neodynamic.JSESCPOSBuilder;
     const doc = new escpos.Document();
+    const logo = await escpos.ESCPOSImage.load('data:image/png;base64,iVBORw0KG...'); // Add your base64 image
 
-    try {
-      const logo = await escpos.ESCPOSImage.load('/logo.png'); // Adjust path as needed
-      const escposCommands = doc
-        .image(logo, escpos.BitmapDensity.D24)
-        .font(escpos.FontFamily.A)
-        .align(escpos.TextAlignment.Center)
-        .style([escpos.FontStyle.Bold])
-        .size(1, 1)
-        .text('This is a BIG text')
-        .font(escpos.FontFamily.B)
-        .size(0, 0)
-        .text('Normal-small text')
-        .linearBarcode('1234567', escpos.Barcode1DType.EAN8, new escpos.Barcode1DOptions(2, 100, true, escpos.BarcodeTextPosition.Below, escpos.BarcodeFont.A))
-        .qrCode('https://mycompany.com', new escpos.BarcodeQROptions(escpos.QRLevel.L, 6))
-        .pdf417('PDF417 data to be encoded here', new escpos.BarcodePDF417Options(3, 3, 0, 0.1, false))
-        .feed(5)
-        .cut()
-        .generateUInt8Array();
+    const escposCommands = doc
+      .image(logo, escpos.BitmapDensity.D24)
+      .font(escpos.FontFamily.A)
+      .align(escpos.TextAlignment.Center)
+      .style([escpos.FontStyle.Bold])
+      .size(1, 1)
+      .text('This is a BIG text')
+      .font(escpos.FontFamily.B)
+      .size(0, 0)
+      .text('Normal-small text')
+      .linearBarcode('1234567', escpos.Barcode1DType.EAN8)
+      .qrCode('https://mycompany.com')
+      .feed(5)
+      .cut()
+      .generateUInt8Array();
 
-      const cpj = new JSPM.ClientPrintJob();
-      cpj.clientPrinter = new JSPM.InstalledPrinter(selectedPrinter);
-      cpj.binaryPrinterCommands = escposCommands;
-      cpj.sendToClient();
-    } catch (error) {
-      console.error('Error generating print job:', error);
-    }
+    const cpj = new JSPM.ClientPrintJob();
+    cpj.clientPrinter = useDefaultPrinter
+      ? new JSPM.DefaultPrinter()
+      : new JSPM.InstalledPrinter(selectedPrinter);
+    cpj.binaryPrinterCommands = escposCommands;
+    cpj.sendToClient();
   };
 
   return (
-    <div className="flex flex-col items-center p-5">
-      <h1 className="text-2xl font-bold mb-4">Advanced ESC/POS Printing</h1>
-      <hr className="w-full mb-4" />
-
-      <label className="flex items-center space-x-2">
-        <input
-          type="checkbox"
-          id="useDefaultPrinter"
-          checked={!selectedPrinter}
-          onChange={() => setSelectedPrinter('')}
-        />
-        <span>Print to Default Printer</span>
+    <div className="text-center p-5">
+      <h1 className="text-2xl font-bold">Advanced ESC/POS Printing</h1>
+      <hr className="my-4" />
+      <label className="block my-2">
+        <input type="checkbox" checked={useDefaultPrinter} onChange={() => setUseDefaultPrinter(!useDefaultPrinter)} />
+        <strong className="ml-2">Print to Default Printer</strong>
       </label>
       <p>or...</p>
-
-      <div>
-        <label htmlFor="printerName">Select a Printer:</label>
+      <div className="my-3">
+        <label>Select an installed Printer:</label>
         <select
-          id="printerName"
+          className="border p-2 ml-2"
           value={selectedPrinter}
           onChange={(e) => setSelectedPrinter(e.target.value)}
-          className="border rounded p-1 ml-2"
+          disabled={useDefaultPrinter}
         >
           {printers.map((printer, index) => (
-            <option key={index} value={printer}>
-              {printer}
-            </option>
+            <option key={index} value={printer}>{printer}</option>
           ))}
         </select>
       </div>
+      <button className="bg-blue-500 text-white px-4 py-2 rounded" onClick={doPrinting}>Print Now</button>
 
-      <button
-        className="mt-4 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
-        onClick={handlePrint}
-      >
-        Print Now
-      </button>
-
-      <Script src="https://jsprintmanager.azurewebsites.net/scripts/JSPrintManager.js" onLoad={() => setIsJSPMLoaded(true)} />
-      <Script src="https://jsprintmanager.azurewebsites.net/scripts/JSESCPOSBuilder.js" />
+      {/* Load scripts in order */}
+      <Script src="https://cdnjs.cloudflare.com/ajax/libs/bluebird/3.3.5/bluebird.min.js" strategy="beforeInteractive" />
+      <Script src="https://code.jquery.com/jquery-3.2.1.slim.min.js" strategy="beforeInteractive" />
+      <Script src="https://jsprintmanager.azurewebsites.net/scripts/cptable.js" strategy="beforeInteractive" />
+      <Script src="https://jsprintmanager.azurewebsites.net/scripts/cputils.js" strategy="beforeInteractive" />
+      <Script src="https://jsprintmanager.azurewebsites.net/scripts/JSESCPOSBuilder.js" strategy="beforeInteractive" />
+      <Script src="https://jsprintmanager.azurewebsites.net/scripts/JSPrintManager.js" strategy="beforeInteractive" />
+      <Script src="https://jsprintmanager.azurewebsites.net/scripts/zip.js" strategy="beforeInteractive" />
+      <Script src="https://jsprintmanager.azurewebsites.net/scripts/zip-ext.js" strategy="beforeInteractive" />
+      <Script src="https://jsprintmanager.azurewebsites.net/scripts/deflate.js" strategy="beforeInteractive" />
     </div>
   );
 }

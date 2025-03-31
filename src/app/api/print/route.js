@@ -1,42 +1,60 @@
 // app/api/print/route.js
-import escpos from 'escpos';
-// Import USB adapter
-import USB from 'escpos-usb';
-// Register the USB adapter
-escpos.USB = USB;
+import { ThermalPrinter, PrinterTypes } from 'node-thermal-printer';
 
-export async function POST() {
+export async function POST(request) {
   try {
-    // Find USB device
-    const device = new escpos.USB();
+    const { printerName } = await request.json();
     
-    // Create printer instance
-    const printer = new escpos.Printer(device);
+    if (!printerName) {
+      return Response.json({ 
+        success: false, 
+        error: 'Printer name is required' 
+      }, { status: 400 });
+    }
     
-    // Connect to the printer and print test page
-    device.open(function() {
-      printer
-        .font('a')
-        .align('ct')
-        .style('bu')
-        .size(1, 1)
-        .text('Thermal Printer Test')
-        .text('------------------------')
-        .text('Next.js with escpos')
-        .text('')
-        .align('lt')
-        .text('Date: ' + new Date().toLocaleString())
-        .text('Device: USB Thermal Printer')
-        .text('Driver: Zadig')
-        .text('')
-        .align('ct')
-        .qrcode('https://nextjs.org')
-        .text('Scan for Next.js docs')
-        .text('')
-        .text('Test completed successfully!')
-        .cut()
-        .close();
+    // Initialize the printer correctly
+    const printer = new ThermalPrinter({
+      type: PrinterTypes.EPSON, // Use PrinterTypes enum instead of ThermalPrinter.types
+      interface: `printer:${printerName}`,
+      options: {
+        timeout: 5000
+      }
     });
+
+    // Check if printer is connected
+    const isConnected = await printer.isPrinterConnected();
+    if (!isConnected) {
+      return Response.json({ 
+        success: false, 
+        error: 'Printer is not connected' 
+      }, { status: 500 });
+    }
+    
+    // Print test page
+    printer.alignCenter();
+    printer.bold(true);
+    printer.setTextSize(1, 1);
+    printer.println("Thermal Printer Test");
+    printer.println("------------------------");
+    printer.bold(false);
+    printer.println("Next.js with node-thermal-printer");
+    printer.println("");
+    printer.alignLeft();
+    printer.println(`Date: ${new Date().toLocaleString()}`);
+    printer.println(`Printer: ${printerName}`);
+    printer.println("");
+    printer.alignCenter();
+    printer.printQR("https://nextjs.org", {
+      cellSize: 8,
+      correction: 'M'
+    });
+    printer.println("Scan for Next.js docs");
+    printer.println("");
+    printer.println("Test completed successfully!");
+    printer.cut();
+    
+    // Execute print job
+    await printer.execute();
     
     return Response.json({ success: true });
     
@@ -44,7 +62,7 @@ export async function POST() {
     console.error('Printer error:', error);
     return Response.json({ 
       success: false, 
-      error: error.message || 'Failed to connect to printer' 
+      error: error.message || 'Failed to print' 
     }, { status: 500 });
   }
 }

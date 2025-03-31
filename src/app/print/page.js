@@ -1,269 +1,106 @@
 'use client';
-import { useState, useEffect } from 'react';
+
+import { useEffect, useState } from 'react';
 import Script from 'next/script';
 
 export default function PrintPage() {
   const [printers, setPrinters] = useState([]);
   const [selectedPrinter, setSelectedPrinter] = useState('');
-  const [isJSPMReady, setIsJSPMReady] = useState(false);
-  const [isPrinting, setIsPrinting] = useState(false);
-  
-  // Sample order data
-  const order = {
-    orderNo: '12345',
-    orderid: 'ORD-987654',
-    timeStamp: '31/03/2025 14:30',
-    userid: 'John Doe',
-    userPhone: '+91 9876543210',
-    payment: 'Online Payment',
-    items: [
-      { name: 'Paneer Tikka', qty: 2, price: 180, total: 360 },
-      { name: 'Butter Naan', qty: 4, price: 40, total: 160 },
-      { name: 'Dal Makhani', qty: 1, price: 150, total: 150 }
-    ],
-    subtotal: 670,
-    tax: 33.5,
-    total: 703.5
-  };
+  const [isJSPMLoaded, setIsJSPMLoaded] = useState(false);
 
-  // Load JSPrintManager and set up event handlers
   useEffect(() => {
-    const checkJSPMStatus = async () => {
-      if (window.JSPM) {
-        window.JSPM.JSPrintManager.auto_reconnect = true;
-        window.JSPM.JSPrintManager.start();
-        
-        window.JSPM.JSPrintManager.WS.onStatusChanged = async function () {
-          if (jspmWSStatus()) {
-            setIsJSPMReady(true);
-            try {
-              // Get available printers
-              const printerList = await window.JSPM.JSPrintManager.getPrinters();
-              setPrinters(printerList);
-              
-              // Automatically select the default printer (first in the list)
-              if (printerList && printerList.length > 0) {
-                setSelectedPrinter(printerList[0]);
-              }
-            } catch (error) {
-              console.error('Error getting printers:', error);
-            }
-          } else {
-            setIsJSPMReady(false);
-          }
-        };
-      }
-    };
-    
-    // Check status every 1 second until JSPM is ready
-    const interval = setInterval(() => {
-      if (window.JSPM) {
-        checkJSPMStatus();
-        clearInterval(interval);
-      }
-    }, 1000);
-    
-    return () => clearInterval(interval);
-  }, []);
+    if (typeof window !== 'undefined' && isJSPMLoaded) {
+      JSPM.JSPrintManager.auto_reconnect = true;
+      JSPM.JSPrintManager.start();
 
-  const jspmWSStatus = () => {
-    if (!window.JSPM) return false;
-    
-    const status = window.JSPM.JSPrintManager.websocket_status;
-    if (status === window.JSPM.WSStatus.Open) return true;
-    if (status === window.JSPM.WSStatus.Closed) {
-      console.warn('JSPrintManager is not installed or not running!');
-      return false;
+      JSPM.JSPrintManager.WS.onStatusChanged = async function () {
+        if (JSPM.JSPrintManager.websocket_status === JSPM.WSStatus.Open) {
+          const printersList = await JSPM.JSPrintManager.getPrinters();
+          setPrinters(printersList);
+          if (printersList.length > 0) setSelectedPrinter(printersList[0]);
+        }
+      };
     }
-    if (status === window.JSPM.WSStatus.Blocked) {
-      alert('JSPM has blocked this website!');
-      return false;
-    }
-    return false;
-  };
+  }, [isJSPMLoaded]);
 
-  const doPrinting = async () => {
-    if (!jspmWSStatus() || !selectedPrinter) {
-      console.error('Cannot print: JSPM not ready or no printer selected');
+  const handlePrint = async () => {
+    if (JSPM.JSPrintManager.websocket_status !== JSPM.WSStatus.Open) {
+      alert('JSPrintManager is not running. Download from https://neodynamic.com/downloads/jspm');
       return;
     }
-    
-    setIsPrinting(true);
-    
-    try {
-      const escpos = window.Neodynamic.JSESCPOSBuilder;
-      const doc = new escpos.Document();
-      
-      // Generate receipt content
-      const receipt = await generateReceipt(doc, escpos, order);
-      
-      // Generate commands and send to printer asynchronously
-      const escposCommands = receipt.generateUInt8Array();
-      const cpj = new window.JSPM.ClientPrintJob();
-      cpj.clientPrinter = new window.JSPM.InstalledPrinter(selectedPrinter);
-      cpj.binaryPrinterCommands = escposCommands;
-      
-      // Send print job to printer
-      await new Promise((resolve) => {
-        cpj.onFinished = function() {
-          resolve();
-        };
-        cpj.sendToClient();
-      });
-      
-      console.log('Printing completed successfully');
-    } catch (error) {
-      console.error('Printing error:', error);
-    } finally {
-      setIsPrinting(false);
-    }
-  };
-  
-  // Separate function to generate receipt content
-  const generateReceipt = async (doc, escpos, orderData) => {
-    try {
-      // Try to load and print logo
-      let receipt;
-      try {
-        const logo = await escpos.ESCPOSImage.load('/logo.png');
-        receipt = doc.image(logo, escpos.BitmapDensity.D24);
-      } catch (logoError) {
-        console.warn('Failed to load logo:', logoError);
-        receipt = doc; // Continue without logo
-      }
-      
-      // Format receipt
-      receipt = receipt
-        .align(escpos.TextAlignment.Center)
-        // Restaurant name - double height, bold
-        .font(escpos.FontFamily.A)
-        .style([escpos.FontStyle.Bold])
-        .size(0, 1)
-        .text('Padmavati Restaurant')
-        .feed(1)
-        
-        // Order Receipt - normal text, bold
-        .size(0, 0)
-        .text('Order Receipt')
-        .feed(1)
-        
-        // Order No - normal text, bold
-        .text(`Order No: ${orderData.orderNo}`)
-        .feed(1)
-        
-        // Divider line
-        .text('------------------------------')
-        .feed(1)
-        
-        // Order details - left aligned, normal text
-        .align(escpos.TextAlignment.Left)
-        .text(`Order ID: ${orderData.orderid}`)
-        .feed(1)
-        .text(`Date & Time: ${orderData.timeStamp}`)
-        .feed(1)
-        .text(`Customer: ${orderData.userid}`)
-        .feed(1);
-      
-      // Conditional phone number
-      if (orderData.userPhone) {
-        receipt = receipt.text(`Phone: ${orderData.userPhone}`).feed(1);
-      }
-      
-      // Payment method
-      receipt = receipt
-        .text(`Payment: ${orderData.payment || 'Cash'}`)
-        .feed(1)
-        .text('------------------------------')
-        .feed(1)
-        
-        // Table header
-        .style([escpos.FontStyle.Bold])
-        .text('Item          Qty  ₹/Unit  Total')
-        .feed(1)
-        .text('------------------------------')
-        .feed(1)
-        
-        // Reset style for items
-        .style([]);
-      
-      // Add items
-      for (const item of orderData.items) {
-        // Format item line with proper spacing
-        const itemName = item.name.padEnd(14).substring(0, 14);
-        const qty = String(item.qty).padStart(2);
-        const price = String(item.price).padStart(7);
-        const total = String(item.total).padStart(7);
-        
-        receipt = receipt.text(`${itemName} ${qty}  ${price}  ${total}`).feed(1);
-      }
-      
-      // Add totals
-      receipt = receipt
-        .text('------------------------------')
-        .feed(1)
-        .align(escpos.TextAlignment.Right)
-        .text(`Subtotal: ₹${orderData.subtotal.toFixed(2)}`)
-        .feed(1)
-        .text(`Tax (5%): ₹${orderData.tax.toFixed(2)}`)
-        .feed(1)
-        .style([escpos.FontStyle.Bold])
-        .text(`TOTAL: ₹${orderData.total.toFixed(2)}`)
-        .feed(1)
-        .style([])
-        .align(escpos.TextAlignment.Center)
-        .feed(1)
-        .text('Thank you for dining with us!')
-        .feed(1)
-        .text('Please visit again')
-        .feed(4)
-        .cut();
-        
-      return receipt;
-    } catch (error) {
-      console.error('Error generating receipt:', error);
-      throw error;
-    }
-  };
 
-  // Auto-print when printer is selected
-  useEffect(() => {
-    if (selectedPrinter && isJSPMReady && !isPrinting) {
-      doPrinting();
+    const escpos = Neodynamic.JSESCPOSBuilder;
+    const doc = new escpos.Document();
+
+    try {
+      const logo = await escpos.ESCPOSImage.load('/logo.png'); // Adjust path as needed
+      const escposCommands = doc
+        .image(logo, escpos.BitmapDensity.D24)
+        .font(escpos.FontFamily.A)
+        .align(escpos.TextAlignment.Center)
+        .style([escpos.FontStyle.Bold])
+        .size(1, 1)
+        .text('This is a BIG text')
+        .font(escpos.FontFamily.B)
+        .size(0, 0)
+        .text('Normal-small text')
+        .linearBarcode('1234567', escpos.Barcode1DType.EAN8, new escpos.Barcode1DOptions(2, 100, true, escpos.BarcodeTextPosition.Below, escpos.BarcodeFont.A))
+        .qrCode('https://mycompany.com', new escpos.BarcodeQROptions(escpos.QRLevel.L, 6))
+        .pdf417('PDF417 data to be encoded here', new escpos.BarcodePDF417Options(3, 3, 0, 0.1, false))
+        .feed(5)
+        .cut()
+        .generateUInt8Array();
+
+      const cpj = new JSPM.ClientPrintJob();
+      cpj.clientPrinter = new JSPM.InstalledPrinter(selectedPrinter);
+      cpj.binaryPrinterCommands = escposCommands;
+      cpj.sendToClient();
+    } catch (error) {
+      console.error('Error generating print job:', error);
     }
-  }, [selectedPrinter, isJSPMReady]);
+  };
 
   return (
-    <div className="text-center p-4">
-      <h1 className="text-xl font-bold">Advanced ESC/POS Printing</h1>
-      <hr className="my-4" />
+    <div className="flex flex-col items-center p-5">
+      <h1 className="text-2xl font-bold mb-4">Advanced ESC/POS Printing</h1>
+      <hr className="w-full mb-4" />
+
+      <label className="flex items-center space-x-2">
+        <input
+          type="checkbox"
+          id="useDefaultPrinter"
+          checked={!selectedPrinter}
+          onChange={() => setSelectedPrinter('')}
+        />
+        <span>Print to Default Printer</span>
+      </label>
+      <p>or...</p>
+
       <div>
-        <p className="text-sm mb-2">Status: {isJSPMReady ? 'JSPM Connected' : 'Connecting to JSPM...'}</p>
-        <p className="text-sm mb-2">Selected Printer: {selectedPrinter || 'None'}</p>
-        
-        <label className="block font-medium mt-4">Available Printers:</label>
-        <select 
-          className="border p-2" 
+        <label htmlFor="printerName">Select a Printer:</label>
+        <select
+          id="printerName"
           value={selectedPrinter}
           onChange={(e) => setSelectedPrinter(e.target.value)}
-          disabled={isPrinting}
+          className="border rounded p-1 ml-2"
         >
-          <option value="">Select a printer</option>
           {printers.map((printer, index) => (
-            <option key={index} value={printer}>{printer}</option>
+            <option key={index} value={printer}>
+              {printer}
+            </option>
           ))}
         </select>
       </div>
-      <button 
-        className="mt-4 p-2 bg-blue-600 text-white rounded" 
-        onClick={doPrinting}
-        disabled={!selectedPrinter || isPrinting || !isJSPMReady}
+
+      <button
+        className="mt-4 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+        onClick={handlePrint}
       >
-        {isPrinting ? 'Printing...' : 'Print Receipt'}
+        Print Now
       </button>
-      
-      {/* Load JSPrintManager Scripts */}
-      <Script src="https://jsprintmanager.azurewebsites.net/scripts/JSPrintManager.js" strategy="beforeInteractive" />
-      <Script src="https://jsprintmanager.azurewebsites.net/scripts/JSESCPOSBuilder.js" strategy="beforeInteractive" />
+
+      <Script src="https://jsprintmanager.azurewebsites.net/scripts/JSPrintManager.js" onLoad={() => setIsJSPMLoaded(true)} />
+      <Script src="https://jsprintmanager.azurewebsites.net/scripts/JSESCPOSBuilder.js" />
     </div>
   );
 }

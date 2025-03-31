@@ -9,6 +9,8 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "escpos": "^3.0.0-alpha.6",
+    "escpos-usb": "^3.0.0-alpha.4",
     "framer-motion": "^12.6.2",
     "jsprintmanager": "^7.0.2",
     "lucide-react": "^0.485.0",

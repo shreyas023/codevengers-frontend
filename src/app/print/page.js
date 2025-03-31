@@ -1,103 +1,64 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import Script from 'next/script';
+import { useEffect, useState } from 'react';
 
-export default function Page() {
-  const [printers, setPrinters] = useState([]);
-  const [selectedPrinter, setSelectedPrinter] = useState('');
-  const [useDefaultPrinter, setUseDefaultPrinter] = useState(false);
+export default function ThermalPrinterTest() {
+  const [status, setStatus] = useState('Click to print test page');
+  const [error, setError] = useState(null);
 
-  useEffect(() => {
-    const initializePrinters = async () => {
-      if (window.JSPM) {
-        JSPM.JSPrintManager.auto_reconnect = true;
-        JSPM.JSPrintManager.start();
-
-        JSPM.JSPrintManager.WS.onStatusChanged = () => {
-          if (JSPM.JSPrintManager.websocket_status === JSPM.WSStatus.Open) {
-            JSPM.JSPrintManager.getPrinters().then((printersList) => {
-              setPrinters(printersList);
-              if (printersList.length > 0) {
-                setSelectedPrinter(printersList[0]);
-              }
-            });
-          }
-        };
+  const printTestPage = async () => {
+    try {
+      setStatus('Sending print job...');
+      
+      // Call the server action to print
+      const response = await fetch('/api/print', {
+        method: 'POST',
+      });
+      
+      const result = await response.json();
+      
+      if (result.success) {
+        setStatus('Print job sent successfully!');
+      } else {
+        throw new Error(result.error || 'Unknown error occurred');
       }
-    };
-
-    initializePrinters();
-  }, []);
-
-  const doPrinting = async () => {
-    if (!window.JSPM || JSPM.JSPrintManager.websocket_status !== JSPM.WSStatus.Open) {
-      alert('JSPrintManager is not installed or not running!');
-      return;
+    } catch (err) {
+      setError(err.message);
+      setStatus('Failed to print');
     }
-
-    const escpos = Neodynamic.JSESCPOSBuilder;
-    const doc = new escpos.Document();
-    const logo = await escpos.ESCPOSImage.load('data:image/png;base64,iVBORw0KG...'); // Add your base64 image
-
-    const escposCommands = doc
-      .image(logo, escpos.BitmapDensity.D24)
-      .font(escpos.FontFamily.A)
-      .align(escpos.TextAlignment.Center)
-      .style([escpos.FontStyle.Bold])
-      .size(1, 1)
-      .text('This is a BIG text')
-      .font(escpos.FontFamily.B)
-      .size(0, 0)
-      .text('Normal-small text')
-      .linearBarcode('1234567', escpos.Barcode1DType.EAN8)
-      .qrCode('https://mycompany.com')
-      .feed(5)
-      .cut()
-      .generateUInt8Array();
-
-    const cpj = new JSPM.ClientPrintJob();
-    cpj.clientPrinter = useDefaultPrinter
-      ? new JSPM.DefaultPrinter()
-      : new JSPM.InstalledPrinter(selectedPrinter);
-    cpj.binaryPrinterCommands = escposCommands;
-    cpj.sendToClient();
   };
 
   return (
-    <div className="text-center p-5">
-      <h1 className="text-2xl font-bold">Advanced ESC/POS Printing</h1>
-      <hr className="my-4" />
-      <label className="block my-2">
-        <input type="checkbox" checked={useDefaultPrinter} onChange={() => setUseDefaultPrinter(!useDefaultPrinter)} />
-        <strong className="ml-2">Print to Default Printer</strong>
-      </label>
-      <p>or...</p>
-      <div className="my-3">
-        <label>Select an installed Printer:</label>
-        <select
-          className="border p-2 ml-2"
-          value={selectedPrinter}
-          onChange={(e) => setSelectedPrinter(e.target.value)}
-          disabled={useDefaultPrinter}
+    <div className="flex flex-col items-center justify-center min-h-screen p-6 bg-gray-100">
+      <div className="w-full max-w-md p-6 bg-white rounded-lg shadow-md">
+        <h1 className="mb-6 text-2xl font-bold text-center">Thermal Printer Test</h1>
+        
+        <div className="mb-4 p-4 bg-gray-50 rounded border">
+          <p className="font-mono text-sm">
+            Device: USB Thermal Printer<br />
+            Driver: Zadig<br />
+            Library: escpos
+          </p>
+        </div>
+        
+        <button
+          onClick={printTestPage}
+          className="w-full py-2 px-4 bg-blue-600 text-white font-semibold rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50"
         >
-          {printers.map((printer, index) => (
-            <option key={index} value={printer}>{printer}</option>
-          ))}
-        </select>
+          Print Test Page
+        </button>
+        
+        <div className="mt-4 text-center">
+          <p className={`font-medium ${error ? 'text-red-600' : 'text-gray-700'}`}>
+            {status}
+          </p>
+          {error && (
+            <p className="mt-2 text-sm text-red-600">
+              Error: {error}
+            </p>
+          )}
+        </div>
       </div>
-      <button className="bg-blue-500 text-white px-4 py-2 rounded" onClick={doPrinting}>Print Now</button>
-
-      {/* Load scripts in order */}
-      <Script src="https://cdnjs.cloudflare.com/ajax/libs/bluebird/3.3.5/bluebird.min.js" strategy="beforeInteractive" />
-      <Script src="https://code.jquery.com/jquery-3.2.1.slim.min.js" strategy="beforeInteractive" />
-      <Script src="https://jsprintmanager.azurewebsites.net/scripts/cptable.js" strategy="beforeInteractive" />
-      <Script src="https://jsprintmanager.azurewebsites.net/scripts/cputils.js" strategy="beforeInteractive" />
-      <Script src="https://jsprintmanager.azurewebsites.net/scripts/JSESCPOSBuilder.js" strategy="beforeInteractive" />
-      <Script src="https://jsprintmanager.azurewebsites.net/scripts/JSPrintManager.js" strategy="beforeInteractive" />
-      <Script src="https://jsprintmanager.azurewebsites.net/scripts/zip.js" strategy="beforeInteractive" />
-      <Script src="https://jsprintmanager.azurewebsites.net/scripts/zip-ext.js" strategy="beforeInteractive" />
-      <Script src="https://jsprintmanager.azurewebsites.net/scripts/deflate.js" strategy="beforeInteractive" />
     </div>
   );
 }
